@@ -992,8 +992,17 @@ namespace arcore {
         int32_t numConfigs = 0;
         ArCameraConfigList_getSize(_session, configList, &numConfigs);
 
+        // Prefer the CPU camera config closest to 640x480 — ARCore's default,
+        // which the Geospatial VPS localizer is tuned for. Upstream selects the
+        // HIGHEST CPU resolution to give Cloud Anchors more SIFT features, but
+        // forcing 1920x1080 starves/delays the camera frame pipeline and stops
+        // ARCore Geospatial VPS from localizing: the geospatial pose stays at
+        // GNSS accuracy (several metres) instead of converging to sub-metre. If
+        // you rely on Cloud Anchors rather than Geospatial, revisit this
+        // trade-off. See README ("Geospatial VPS camera-config selection").
+        const int32_t targetArea = 640 * 480;
         int bestIdx = -1;
-        int32_t bestArea = 0;
+        int32_t bestDelta = 2147483647; // INT32_MAX
         ArCameraConfig *tmpConfig = nullptr;
         ArCameraConfig_create(_session, &tmpConfig);
 
@@ -1002,8 +1011,9 @@ namespace arcore {
             int32_t w = 0, h = 0;
             ArCameraConfig_getImageDimensions(_session, tmpConfig, &w, &h);
             int32_t area = w * h;
-            if (area > bestArea) {
-                bestArea = area;
+            int32_t delta = area > targetArea ? area - targetArea : targetArea - area;
+            if (delta < bestDelta) {
+                bestDelta = delta;
                 bestIdx = i;
             }
             __android_log_print(ANDROID_LOG_INFO, "ViroARCore",

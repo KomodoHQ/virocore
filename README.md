@@ -18,6 +18,20 @@ ViroCore is MIT licensed and free forever.
 
 > Most developers should build with **[`@reactvision/react-viro`](https://www.npmjs.com/package/@reactvision/react-viro)**, which wraps this engine behind a React Native API. This repository is the native renderer that ViroReact ships as a prebuilt library.
 
+## Fork changes
+
+This is a fork of [ReactVision/virocore](https://github.com/ReactVision/virocore). It tracks upstream and carries one behavioural change:
+
+### Geospatial VPS camera-config selection (Android)
+
+**Problem.** Upstream's `SessionNative` constructor (`android/viroar/src/main/cpp/arcore/ARCore_Native.cpp`) forces the **highest-resolution ARCore CPU camera config** (typically `1920×1080`) for every AR session, to give **Cloud Anchors** more feature points for matching. That resolution starves and delays the camera frame pipeline, which prevents ARCore's **Geospatial API / VPS** from visually localizing on Android: the geospatial camera pose never converges past GNSS accuracy (several metres, with a large orientation-yaw error), so geospatially-anchored content is placed in the wrong position/orientation. VPS localization is tuned for ARCore's default CPU image (~`640×480`).
+
+**Symptom.** `Earth`/geospatial pose reports `horizontalAccuracy` of several metres and a high `orientationYawAccuracy` even where VPS coverage exists and a stock ARCore Geospatial app localizes to ~1 m at the same spot. Confirmed with a same-location A/B: `640×480` → ~1 m lock (yaw ~2°); `1920×1080` → ~5 m GNSS (yaw ~7–20°).
+
+**Change.** The camera-config selection now picks the config **closest to `640×480`** instead of the largest, so Geospatial VPS localizes reliably.
+
+**Trade-off.** If your app depends on **Cloud Anchors** (which benefit from the higher-resolution image) rather than the Geospatial API, this change is not for you — revisit the selection in `SessionNative::SessionNative`.
+
 ## Documentation
 
 - ViroReact docs and guides: <https://viro-community.readme.io/docs/overview>
