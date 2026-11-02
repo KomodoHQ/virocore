@@ -20,7 +20,11 @@ ViroCore is MIT licensed and free forever.
 
 ## Fork changes
 
-This is a fork of [ReactVision/virocore](https://github.com/ReactVision/virocore). It tracks upstream and carries one behavioural change:
+This is a fork of [ReactVision/virocore](https://github.com/ReactVision/virocore). It tracks upstream and carries one behavioural change, plus an ARCore bump (both below). Branch `arcore-1.57` is based on upstream `v2.57.5`; `android/viroar` is unchanged between `v2.57.5` and `v2.58.1`.
+
+### ARCore 1.57.0 (Android)
+
+Upstream's Android build mixes ARCore versions (the vendored C library `libarcore_sdk_c.so` is 1.51 while the shipped Java client AAR is 1.43). This branch moves the ARCore C API header (`android/libs/arcore/include/arcore_c_api.h`, from `google-ar/arcore-android-sdk` `v1.57.0`), the vendored `android/viroar/src/main/jniLibs/*/libarcore_sdk_c.so` (from `com.google.ar:core:1.57.0`) and the `com.google.ar:core` dependency in `sharedCode`/`virocore`/`viroreact` to **1.57.0**, to match the iOS ARCore pods. The C API is additive between 1.51 and 1.57 (no removed symbols). Build the lib with `cd android && ./gradlew :viroar:assembleRelease` (NDK 27.1.12297006); output lands in `android/viroar/build/natives/jni/`.
 
 ### Geospatial VPS camera-config selection (Android)
 

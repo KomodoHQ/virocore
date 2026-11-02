@@ -1740,6 +1740,9 @@ AR_DEFINE_ENUM(ArGeospatialMode){
     /// @c ::ArSession_isGeospatialModeSupported to check if the current device
     /// and selected camera support enabling this mode.
     AR_GEOSPATIAL_MODE_ENABLED = 2,
+    /// A hint for low-power geospatial tracking where quality may be reduced
+    /// but battery life improved.
+    AR_GEOSPATIAL_MODE_INERTIAL = 3,
 };
 
 /// @ingroup ArConfig
@@ -2316,6 +2319,8 @@ ArStatus ArSession_createWithFeatures(void *env,
                                       void *context,
                                       const ArSessionFeature *features,
                                       ArSession **out_session_pointer);
+
+//     session_create_with_attribution_source)
 
 // === ArFuture functions ===
 
@@ -3037,7 +3042,7 @@ void ArRecordingConfig_setMp4DatasetFilePath(const ArSession *session,
 /// @param[in]  session             The ARCore session
 /// @param[in]  config              The config object to query
 /// @param[out] out_mp4_dataset_uri Pointer to a @c char* to receive
-///     the address of the newly allocated URI.
+///     the address of the newly allocated URI.
 void ArRecordingConfig_getMp4DatasetUri(const ArSession *session,
                                         const ArRecordingConfig *config,
                                         char **out_mp4_dataset_uri);
@@ -5064,6 +5069,79 @@ ArStatus ArFrame_acquireDepthImage16Bits(const ArSession *session,
                                          ArImage **out_depth_image);
 
 /// @ingroup ArFrame
+/// Attempts to acquire a depth image that corresponds to the current frame.
+///
+/// The depth image has format <a
+/// href="https://developer.android.com/reference/android/hardware/HardwareBuffer#D_FP32">
+/// HardwareBuffer.D_FP32</a>, which is a single 32-bit plane at index 0,
+/// stored in little-endian format. Each pixel contains the distance in
+/// meters along the camera principal axis, with the representable depth
+/// range between 0 meters and about 65 meters.
+///
+/// To extract distance from a depth map, see <a
+/// href="https://developers.google.com/ar/develop/c/depth/developer-guide#extract-distance">the
+/// Depth API developer guide</a>.
+////
+/// The actual size of the depth image depends on the device and its display
+/// aspect ratio. The size of the depth image is typically around 160x120
+/// pixels, with higher resolutions up to 640x480 on some devices. These sizes
+/// may change in the future. The outputs of
+/// @c ::ArFrame_acquireDepthImageMeters,
+/// @c ::ArFrame_acquireRawDepthImageMeters and
+/// @c ::ArFrame_acquireRawDepthConfidenceImage will all have the exact same
+/// size.
+///
+/// Optimal depth accuracy is achieved between .5 meters (50 centimeters)
+/// and 15 meters from the camera, with depth reliably
+/// observed up to 25 meters. Error increases quadratically
+/// as distance from the camera increases.
+///
+/// Depth is estimated using data from the world-facing cameras, user motion,
+/// and hardware depth sensors such as a time-of-flight sensor (or ToF sensor)
+/// if available. As the user moves their device through the environment, 3D
+/// depth data is collected and cached which improves the quality of subsequent
+/// depth images and reducing the error introduced by camera distance.
+///
+/// If an up-to-date depth image isn't ready for the current frame, the most
+/// recent depth image available from an earlier frame will be returned instead.
+/// This is expected only to occur on compute-constrained devices. An up-to-date
+/// depth image should typically become available again within a few frames.
+///
+/// When the Geospatial API and the Depth API are enabled, output images
+/// from the Depth API will include terrain and building geometry when in a
+/// location with VPS coverage. See the <a
+/// href="https://developers.google.com/ar/develop/c/depth/geospatial-depth">Geospatial
+/// Depth Developer Guide</a> for more information.
+///
+/// The image must be released with @c ::ArImage_release once it is no
+/// longer needed.
+///
+/// @param[in]  session                The ARCore session.
+/// @param[in]  frame                  The current frame.
+/// @param[out] out_depth_image        On successful return, this is filled out
+///     with a pointer to an @c ::ArImage. On error return, this is filled out
+///     with @c nullptr.
+/// @return @c #AR_SUCCESS or any of:
+/// - @c #AR_ERROR_INVALID_ARGUMENT if the session, frame, or depth image
+///   arguments are invalid.
+/// - @c #AR_ERROR_NOT_YET_AVAILABLE if the number of observed camera frames is
+///   not yet sufficient for depth estimation; or depth estimation was not
+///   possible due to poor lighting, camera occlusion, or insufficient motion
+///   observed.
+/// - @c #AR_ERROR_NOT_TRACKING The session is not in the
+///   @c #AR_TRACKING_STATE_TRACKING state, which is required to acquire depth
+///   images.
+/// - @c #AR_ERROR_ILLEGAL_STATE if a supported depth mode was not enabled in
+///   Session configuration.
+/// - @c #AR_ERROR_RESOURCE_EXHAUSTED if the caller app has exceeded maximum
+///   number of depth images that it can hold without releasing.
+/// - @c #AR_ERROR_DEADLINE_EXCEEDED if the provided Frame is not the current
+///   one.
+ArStatus ArFrame_acquireDepthImageMeters(const ArSession *session,
+                                         const ArFrame *frame,
+                                         ArImage **out_depth_image);
+
+/// @ingroup ArFrame
 /// Attempts to acquire a "raw", mostly unfiltered, depth image that corresponds
 /// to the current frame.
 ///
@@ -5238,6 +5316,94 @@ ArStatus ArFrame_acquireRawDepthImage(const ArSession *session,
 /// - @c #AR_ERROR_DEADLINE_EXCEEDED if the provided @c ::ArFrame is not the
 ///   current one.
 ArStatus ArFrame_acquireRawDepthImage16Bits(const ArSession *session,
+                                            const ArFrame *frame,
+                                            ArImage **out_depth_image);
+
+/// @ingroup ArFrame
+/// Attempts to acquire a "raw", mostly unfiltered, depth image that corresponds
+/// to the current frame.
+///
+/// The raw depth image is sparse and does not provide valid depth for all
+/// pixels. Pixels without a valid depth estimate have a pixel value of 0 and a
+/// corresponding confidence value of 0 (see
+/// @c ::ArFrame_acquireRawDepthConfidenceImage).
+///
+/// The depth image has format <a
+/// href="https://developer.android.com/reference/android/hardware/HardwareBuffer#D_FP32">
+/// HardwareBuffer.D_FP32</a>, which is a single 32-bit plane at index 0,
+/// stored in little-endian format. Each pixel contains the distance in
+/// meters along the camera principal axis, with the representable depth
+/// range between 0 meters and about 65 meters.
+///
+/// To extract distance from a depth map, see <a
+/// href="https://developers.google.com/ar/develop/c/depth/developer-guide#extract-distance">the
+/// Depth API developer guide</a>.
+///
+/// The actual size of the depth image depends on the device and its display
+/// aspect ratio. The size of the depth image is typically around 160x120
+/// pixels, with higher resolutions up to 640x480 on some devices. These sizes
+/// may change in the future. The outputs of
+/// @c ::ArFrame_acquireDepthImageMeters,
+/// @c ::ArFrame_acquireRawDepthImageMeters and
+/// @c ::ArFrame_acquireRawDepthConfidenceImage will all have the exact same
+/// size.
+///
+/// Optimal depth accuracy is achieved between .5 meters (50 centimeters)
+/// and 15 meters from the camera, with depth reliably
+/// observed up to 25 meters. Error increases quadratically
+/// as distance from the camera increases.
+///
+/// Depth is primarily estimated using data from the motion of world-facing
+/// cameras. As the user moves their device through the environment, 3D depth
+/// data is collected and cached, improving the quality of subsequent depth
+/// images and reducing the error introduced by camera distance. Depth accuracy
+/// and robustness improves if the device has a hardware depth sensor, such as a
+/// time-of-flight (ToF) camera.
+///
+/// Not every raw depth image contains a new depth estimate. Typically there are
+/// about 10 updates to the raw depth data per second. The depth images between
+/// those updates are a 3D reprojection which transforms each depth pixel into a
+/// 3D point in space and renders those 3D points into a new raw depth image
+/// based on the current camera pose. This effectively transforms raw depth
+/// image data from a previous frame to account for device movement since the
+/// depth data was calculated. For some applications it may be important to know
+/// whether the raw depth image contains new depth data or is a 3D reprojection
+/// (for example, to reduce the runtime cost of 3D reconstruction). To do that,
+/// compare the current raw depth image timestamp, obtained via @c
+/// ::ArImage_getTimestamp, with the previously recorded raw depth image
+/// timestamp. If they are different, the depth image contains new information.
+///
+/// When the Geospatial API and the Depth API are enabled, output images
+/// from the Depth API will include terrain and building geometry when in a
+/// location with VPS coverage. See the <a
+/// href="https://developers.google.com/ar/develop/c/depth/geospatial-depth">Geospatial
+/// Depth Developer Guide</a> for more information.
+///
+/// The image must be released via @c ::ArImage_release once it is no longer
+/// needed.
+///
+/// @param[in]  session                The ARCore session.
+/// @param[in]  frame                  The current frame.
+/// @param[out] out_depth_image        On successful return, this is filled out
+///   with a pointer to an @c ::ArImage. On error return, this is filled out
+///   filled out with @c nullptr.
+/// @return @c #AR_SUCCESS or any of:
+/// - @c #AR_ERROR_INVALID_ARGUMENT if the session, frame, or depth image
+///   arguments are invalid.
+/// - @c #AR_ERROR_NOT_YET_AVAILABLE if the number of observed camera frames is
+///   not yet sufficient for depth estimation; or depth estimation was not
+///   possible due to poor lighting, camera occlusion, or insufficient motion
+///   observed.
+/// - @c #AR_ERROR_NOT_TRACKING The session is not in the
+///   @c #AR_TRACKING_STATE_TRACKING state, which is required to acquire depth
+///   images.
+/// - @c #AR_ERROR_ILLEGAL_STATE if a supported depth mode was not enabled in
+///   Session configuration.
+/// - @c #AR_ERROR_RESOURCE_EXHAUSTED if the caller app has exceeded maximum
+///   number of depth images that it can hold without releasing.
+/// - @c #AR_ERROR_DEADLINE_EXCEEDED if the provided @c ::ArFrame is not the
+///   current one.
+ArStatus ArFrame_acquireRawDepthImageMeters(const ArSession *session,
                                             const ArFrame *frame,
                                             ArImage **out_depth_image);
 
@@ -5619,6 +5785,13 @@ AR_DEFINE_ENUM(ArImageFormat){
     /// Integer value equal to <a
     /// href="https://developer.android.com/reference/android/hardware/HardwareBuffer#D_16">D_16</a>.
     AR_IMAGE_FORMAT_D_16 = 0x00000030,
+
+    /// Produced by @c ::ArFrame_acquireDepthImageMeters and
+    /// @c ::ArFrame_acquireRawDepthImageMeters.
+    /// Depth range values in units of meters.
+    /// Floating point value equal to <a
+    /// href="https://developer.android.com/reference/android/hardware/HardwareBuffer#D_FP32">D_FP32</a>.
+    AR_IMAGE_FORMAT_D_FP32 = 0x00000033,
 
     /// Produced by @c ::ArFrame_acquireRawDepthConfidenceImage. Integer value
     /// equal to @c <a
